@@ -1,37 +1,25 @@
 {
-  "name": "kkt",
+  "name": "dhanyabuilders",
   "type": "module",
   "version": "1.0.0",
-  "description": "kkt",
-  "main": "index.js",
+  "description": "Backend for dhanyabuilders",
+  "main": "server.js",
   "scripts": {
-    "build": "cd frontend && npm install && npm run build",
-    "start": "nodemon --watch backend --exec node --experimental-modules backend/server.js"
-  },
-  "author": "",
-  "license": "ISC",
-  "devDependencies": {
-    "eslint": "^9.17.0",
-    "eslint-plugin-react": "^7.37.2",
-    "nodemon": "^3.1.9"
+    "start": "nodemon server.js"
   },
   "dependencies": {
-    "@tensorflow/tfjs-backend-wasm": "^4.22.0",
-    "@tensorflow/tfjs-node": "^4.22.0",
     "bcryptjs": "^2.4.3",
     "body-parser": "^1.20.3",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-async-handler": "^1.2.0",
-    "express-validator": "^7.2.0",
-    "face-api.js": "^0.22.2",
+    "express-validator": "^7.2.1",
     "jsonwebtoken": "^9.0.2",
     "mailgun-js": "^0.22.0",
     "mongoose": "^8.9.1",
     "multer": "^1.4.5-lts.1",
-    "mysql": "^2.18.1",
-    "playwright": "^1.49.1",
-    "puppeteer": "^23.10.4",
+    "playwright": "^1.50.0",
+    "puppeteer": "^24.1.1",
     "qrcode": "^1.5.4",
     "socket.io": "^4.8.1",
     "xlsx": "^0.18.5"
