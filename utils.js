@@ -1,5 +1,9 @@
 import jwt from 'jsonwebtoken';
 import mg from 'mailgun-js';
+import Sequence from './models/sequenceModal.js';
+import MaterialReceipt from './models/matearialreceiptModal.js';
+import MaterialUsage from './models/materialUsageModal.js';
+import mongoose from 'mongoose';
 
 export const generateToken = (user) => {
   return jwt.sign(
@@ -101,3 +105,53 @@ export const payOrderEmailTemplate = (order) => {
   </p>
   `;
 };
+
+
+// utils/generateId.js
+
+
+async function generateId(sequenceName) {
+  const sequence = await Sequence.findOneAndUpdate(
+    { name: sequenceName },
+    { $inc: { value: 1 } },
+    { new: true, upsert: true }
+  );
+  return `${sequenceName}-${sequence.value.toString().padStart(6, '0')}`;
+}
+
+export default generateId;
+
+
+
+// utils/calculateInventory.js
+
+
+// Helper function to calculate the current inventory for a project
+// This function is exactly the same as your inventory route calculation.
+export async function calculateProjectInventory(projectId) {
+  const inventoryMap = {};
+
+  // Calculate received quantities
+  const receipts = await MaterialReceipt.find({ project: projectId });
+  receipts.forEach((receipt) => {
+    receipt.items.forEach((item) => {
+      const key = item.material.toString();
+      inventoryMap[key] = (inventoryMap[key] || 0) + item.quantity;
+    });
+  });
+
+  // Subtract used quantities
+  const usages = await MaterialUsage.find({ project: projectId });
+  usages.forEach((usage) => {
+    usage.items.forEach((item) => {
+      const key = item.material.toString();
+      inventoryMap[key] = (inventoryMap[key] || 0) - item.quantity;
+    });
+  });
+
+  return inventoryMap;
+}
+
+
+
+

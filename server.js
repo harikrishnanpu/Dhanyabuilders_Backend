@@ -32,6 +32,8 @@ import taskRouter from './routers/taskBoardRouter.js';
 import calendarRouter from './routers/calendarRouter.js';
 import chatRouter from './routers/chatRouter.js';
 import notificationRouter from './routers/notificationRouter.js';
+import projectRouter from './routers/projectRouter.js';
+import ProjectChat from './models/projectChat.js';
 
 
 dotenv.config();
@@ -69,6 +71,7 @@ app.use('/api/taskboard', taskRouter)
 app.use('/api/calendar', calendarRouter);
 app.use('/api/chat', chatRouter);
 app.use('/api/notifications', notificationRouter);
+app.use('/api/projects', projectRouter);
 
 
 
@@ -136,29 +139,67 @@ app.get('/export', async (req, res) => {
 const port = process.env.PORT || 4000;
 
 const httpServer = http.Server(app);
-const io = new Server(httpServer, { cors: { origin: '*' } });
 const users = [];
 
 
+const io = new Server(httpServer, {
+  cors: {
+    origin: '*', // Adjust this to your client’s origin in production
+    methods: ['GET', 'POST']
+  }
+});
+
+/// Helper function to build "room name" for either group or private
+function getRoomName({ projectId, toUserId }) {
+  // if "toUserId" provided => room: "projectId-userId"
+  // else => room: "projectId-group"
+  if (toUserId) return `${projectId}-${toUserId}`;
+  return `${projectId}-group`;
+}
 
 io.on('connection', (socket) => {
-  console.log('Socket connected:', socket.id);
+  // console.log('Socket connected:', socket.id);
 
-  // Listen for "sendMessage" from client
-  socket.on('sendMessage', async (message) => {
-    console.log('Message received from client:', message);
-    
-    // Optionally store to DB or broadcast
-    // For example, we can emit to everyone:
-    io.emit('receiveMessage', message);
+  // Client "joins" a room
+  // data = { projectId, toUserId? }  (optional toUserId for private chat)
+  socket.on('joinProject', (data) => {
+    const room = getRoomName(data);
+    socket.join(room);
+    // console.log(`Socket ${socket.id} joined room ${room}`);
   });
 
-  // Optional: Listen for custom events or handle disconnection
+  // Typing event
+  // data = { projectId, toUserId?, authorId, authorName }
+  socket.on('typing', (data) => {
+    const room = getRoomName(data);
+    // broadcast "userTyping" to that room
+    socket.to(room).emit('userTyping', data);
+  });
+
+  // New message
+  // payload = { text, authorName, authorRole, authorId, projectId, attachmentUrl, toUserId? }
+  socket.on('newMessage', async (payload) => {
+    try {
+      // Save to DB
+      const newMsg = new ProjectChat(payload);
+      await newMsg.save();
+
+      // Broadcast to same room
+      const room = getRoomName(payload);
+      io.to(room).emit('messageAdded', {
+        ...payload,
+        _id: newMsg._id,
+        createdAt: newMsg.createdAt
+      });
+    } catch (err) {
+      console.error('Error saving new message:', err);
+    }
+  });
+
   socket.on('disconnect', () => {
     console.log('Socket disconnected:', socket.id);
   });
 });
-
 
 // io.on('connection', (socket) => {
 

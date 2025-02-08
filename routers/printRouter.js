@@ -61,8 +61,8 @@ printRouter.post('/generate-pdf', async (req, res) => {
   <div class="invoice">
         <!-- Header Section -->
         <div class="header">
-            <p style="font-weight: 900;">KK TRADING</p>
-            <p style="font-size: 12px;margin-top: 10px;font-weight: 900;">Tiles, Granites, Sanitary Wares, UV Sheets</p>
+            <p style="font-weight: 900;">Dhanya Builders</p>
+            <p style="font-size: 12px;margin-top: 10px;font-weight: 900;">Sample</p>
         </div>
 
         <!-- Invoice Information -->
@@ -76,7 +76,7 @@ printRouter.post('/generate-pdf', async (req, res) => {
             </div>
             <div>
                 <p><strong>From:</strong></p>
-                <p style="font-weight: bold;">KK TRADING</p>
+                <p style="font-weight: bold;">Dhanya Builders</p>
                 <p style="font-size: 10px;">Moncompu, Chambakulam,Road</p>
                 <p style="font-size: 10px;">Alappuzha, 688503</p>
                 <p style="font-size: 10px;">Contact: 0477 2080282</p>
@@ -148,7 +148,7 @@ printRouter.post('/generate-pdf', async (req, res) => {
             <div style="font-size: 10px;margin-top: 50px;" class="payment-instructions">
                 <p><strong>Authorised Signatory:</strong></p>
                 <p style="margin-top: 40px;">Date: ------------------------------</p>
-                <p style="font-weight: bold;text-align: center;margin-top: 20px;">KK TRADING</p>
+                <p style="font-weight: bold;text-align: center;margin-top: 20px;">Dhanya Builders</p>
             </div>
             <div>
                 <p>Subtotal: <span>${parseFloat(subTotal || 0).toFixed(2)}</span></p>
@@ -433,9 +433,9 @@ printRouter.post('/generate-invoice-html', async (req, res) => {
       <div class="invoice">
         <!-- Header Section -->
         <div class="header">
-            <p style="font-weight: 900;">KK TRADING</p>
+            <p style="font-weight: 900;">Dhanya Builders</p>
             <p style="font-size: 14px;margin-top: 10px;font-weight: 900;">
-              Tiles, Granites, Sanitary Wares, UV Sheets
+              Sample
             </p>
         </div>
 
@@ -462,7 +462,7 @@ printRouter.post('/generate-invoice-html', async (req, res) => {
 
           <div style="font-size: 12px;">
               <p><strong>From:</strong></p>
-              <p style="font-weight: bold;">KK TRADING</p>
+              <p style="font-weight: bold;">Dhanya Builders</p>
               <p style="font-size: 12px;">Moncompu, Chambakulam, Alappuzha</p>
               <p style="font-size: 12px;">Alappuzha, 688503</p>
               <p style="font-size: 12px;">Contact: 0477 2080282</p>
@@ -558,7 +558,7 @@ printRouter.post('/generate-invoice-html', async (req, res) => {
                   <div style="font-size: 12px;margin-top: 30px;text-align:left;" class="payment-instructions">
                   <p style="margin-top: 40px;">Date: ${new Date(invoiceDate).toLocaleDateString('en-GB')} </p>
                   <p><strong>Authorised Signatory:</strong></p>
-                      <p style="font-weight: bold;text-align: center;margin-top: 20px;">KK TRADING</p>
+                      <p style="font-weight: bold;text-align: center;margin-top: 20px;">Dhanya Builders</p>
                   </div>
 
                   <!-- Right side totals -->
@@ -966,7 +966,7 @@ printRouter.post('/daily/generate-report', async (req, res) => {
           <div class="container">
               <div class="header">
                   <div>
-                      <h1>KK TRADING</h1>
+                      <h1>Dhanya Builders</h1>
                       <p>Daily Transactions Report</p>
                       <p>From: ${new Date(params.fromDate).toLocaleDateString()} To: ${new Date(params.toDate).toLocaleDateString()}</p>
                   </div>
@@ -1145,8 +1145,8 @@ printRouter.post('/generate-purchase-invoice-html', async (req, res) => {
       <div class="invoice">
         <!-- Header Section -->
         <div class="header">
-          <p style="font-weight: 900; font-size: 24px;">KK TRADING</p>
-          <p style="font-size: 14px; margin-top: 5px; font-weight: 600;">Tiles, Granites, Sanitary Wares, UV Sheets</p>
+          <p style="font-weight: 900; font-size: 24px;">Dhanya Builders</p>
+          <p style="font-size: 14px; margin-top: 5px; font-weight: 600;">Sample</p>
         </div>
 
         <!-- Invoice Information -->
@@ -1165,7 +1165,7 @@ printRouter.post('/generate-purchase-invoice-html', async (req, res) => {
 
           <div>
             <p><strong>From:</strong></p>
-            <p style="font-weight: bold;">KK TRADING</p>
+            <p style="font-weight: bold;">Dhanya Builders</p>
             <p style="font-size: 12px;">Moncompu, Chambakulam, Road</p>
             <p style="font-size: 12px;">Alappuzha, 688503</p>
             <p style="font-size: 12px;">Contact: 0477 2080282</p>
@@ -1286,7 +1286,7 @@ printRouter.post('/generate-purchase-invoice-html', async (req, res) => {
         <div class="payment-instructions">
           <p><strong>Authorised Signatory:</strong></p>
           <p style="margin-top: 40px;">Date: ____________________________</p>
-          <p style="font-weight: bold; text-align: center; margin-top: 20px;">KK TRADING</p>
+          <p style="font-weight: bold; text-align: center; margin-top: 20px;">Dhanya Builders</p>
         </div>
         `
             : ``
@@ -1632,8 +1632,8 @@ function generateReturnInvoiceHTML(returnData, qrCodeDataURL) {
   <body>
     <div class="invoice">
       <div class="header">
-        <h1>KK TRADING</h1>
-        <p>Tiles, Granites, Sanitary Wares, UV Sheets</p>
+        <h1>Dhanya Builders</h1>
+        <p>Sample</p>
       </div>
       <div class="qr-code">
         <img src="${qrCodeDataURL}" alt="QR Code" width="100" height="100" />
@@ -1833,8 +1833,8 @@ printRouter.post('/generate-loading-slip-pdf', async (req, res) => {
     <div class="loading-slip">
       <!-- Header Section -->
       <div class="header">
-        <h1>KK TRADING</h1>
-        <p class="sub-header">Tiles, Granites, Sanitary Wares, UV Sheets</p>
+        <h1>Dhanya Builders</h1>
+        <p class="sub-header">Sample</p>
       </div>
 
       <!-- Delivery & Payment Info -->
@@ -2134,7 +2134,7 @@ printRouter.post('/generate-leave-application-pdf', async (req, res) => {
   </head>
   <body>
     <div class="header">
-      <h1>KK TRADING</h1>
+      <h1>Dhanya Builders</h1>
       <p>Chambakulam, Moncompu</p>
       <p>Contact: 8606565282 | tradeinkk@gmail.com</p>
       <hr>
