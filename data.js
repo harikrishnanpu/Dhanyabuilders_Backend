@@ -8,14 +8,9 @@ const data = {
       isSuper: true,
       password: bcrypt.hashSync('1234', 8),
       isAdmin: true,
-      isSeller: true,
-      seller: {
-        name: 'KK',
-        logo: '/images/',
-        description: 'best seller',
-        rating: 4.5,
-        numReviews: 120,
-      },
+      isSupervisor: true,
+      isSuper: true,
+      isEmployee: true,
     },
   ],
   products: [

@@ -18,6 +18,7 @@ import MaterialRequest from '../models/matearialsModal.js';
 import { createTask, deleteTask, getTask, getTasks, updateTask } from './projectTask.js';
 import Task from '../models/projectTaskModal.js';
 import ProjectChat from '../models/projectChat.js';
+import { addProgressComment, createProgressItem, createSubProgressItem, deleteProgressComment, deleteProgressItem, deleteSubProgressItem, getProgressComments, getProgressItems, updateProgressComment, updateProgressItem, updateSubProgressItem } from './projectProgressRouter.js';
 
 
 
@@ -347,27 +348,25 @@ projectRouter.get('/project/materials/:projectId', async (req, res) => {
 projectRouter.get('/project/approved-materials/:projectId', async (req, res) => {
   try {
     const { projectId } = req.params;
-
+    // "Matearials" is presumably the "MaterialRequest" schema
     const approvedRequests = await Matearials.find({
       project: projectId,
       'items.status': { $in: ['Approved', 'Partially Approved'] },
     }).populate('items.material');
 
     let approvedMaterials = [];
-
-    for (const request of approvedRequests) {
-      for (const item of request.items) {
-        if (item.status !== 'Rejected') {
-          const pendingQuantity = item.approvedQuantity - (item.receivedQuantity || 0);
-
-          if (pendingQuantity > 0) {
-            approvedMaterials.push({
-              _id: item.material._id,
-              material: item.material,
-              approvedQuantity: pendingQuantity,
-              unit: item.material.unit,
-            });
-          }
+    for (const req of approvedRequests) {
+      for (const item of req.items) {
+        if (
+          ['Approved', 'Partially Approved'].includes(item.status) &&
+          item.approvedQuantity > (item.receivedQuantity || 0)
+        ) {
+          const pendingQty = item.approvedQuantity - (item.receivedQuantity || 0);
+          approvedMaterials.push({
+            _id: req._id + '-' + item.material._id, // create a unique ID
+            material: item.material,
+            approvedQuantity: pendingQty,
+          });
         }
       }
     }
@@ -411,14 +410,17 @@ projectRouter.post('/materials/:projectId', async (req, res) => {
   }
 });
 
-// Update material request status
+// Update material request status/project/materials/requests/:requestId/approve
+
+// PUT /api/projects/project/materials/requests/:requestId/approve
+// Receives an array of items with { materialId, requestedQuantity, approvedQuantity, rejectedQuantity, status }
 projectRouter.put('/project/materials/requests/:requestId/approve', async (req, res) => {
   try {
     const { requestId } = req.params;
     const { items } = req.body;
 
     if (!items || !Array.isArray(items)) {
-      return res.status(400).json({ message: 'Items are required' });
+      return res.status(400).json({ message: 'Items array is required' });
     }
 
     // Find the material request
@@ -427,23 +429,20 @@ projectRouter.put('/project/materials/requests/:requestId/approve', async (req, 
       return res.status(404).json({ message: 'Material request not found' });
     }
 
-    // Process items and collect errors
     const errors = [];
     for (const updatedItem of items) {
       const { materialId, approvedQuantity, rejectedQuantity, status } = updatedItem;
-
+      // Find the matching item in the request
       const item = request.items.find(
         (i) => i.material._id.toString() === materialId.toString()
       );
-
       if (!item) {
         errors.push(`Material with ID ${materialId} not found in request`);
         continue;
       }
 
-      // Validate quantities
-      const totalQuantity = item.quantity;
-      if ((approvedQuantity ?? 0) + (rejectedQuantity ?? 0) !== totalQuantity) {
+      // Validate that approved+rejected = item.quantity
+      if ((approvedQuantity ?? 0) + (rejectedQuantity ?? 0) !== item.quantity) {
         errors.push(`Approved + rejected must equal total for material ${materialId}`);
         continue;
       }
@@ -459,18 +458,15 @@ projectRouter.put('/project/materials/requests/:requestId/approve', async (req, 
       item.status = status;
     }
 
-    // If any errors were found, return them
     if (errors.length > 0) {
       return res.status(400).json({ message: 'Some materials had issues', errors });
     }
 
-    // Save the updated request
     await request.save();
-
     res.status(200).json({ message: 'Request updated successfully', request });
   } catch (error) {
-    console.error('Error approving request:', error.stack);
-    res.status(500).json({ error: 'Internal Server Error', details: error.message });
+    console.error('Error approving request:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
   }
 });
 
@@ -619,20 +615,19 @@ projectRouter.get('/project/material', async (req, res) => {
 
 
 projectRouter.post('/material/add', async (req, res) => {
-    try {
-        const { name, unit } = req.body;
-        if (!name || !unit) {
-          return res.status(400).json({ message: 'Name and unit are required' });
-        }
-        const existingMaterial = await Material.findOne({ name });
-        if (existingMaterial) {
-          return res.status(400).json({ message: 'Material already exists' });
-        }
-        const material = new Material({ name, unit });
-        await material.save();
-        res.status(201).json({ message: 'Material added', material });
+      try {
+        const { name, unit, imageUrl, description } = req.body;
+        const newMaterial = new Material({
+          name,
+          unit,
+          imageUrl,
+          description,
+        });
+        await newMaterial.save();
+        res.status(201).json({ material: newMaterial });
       } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Error adding new material:', error);
+        res.status(500).json({ error: 'Error adding new material' });
       }
 });
 
@@ -713,11 +708,17 @@ projectRouter.get('/project/get-receipt-material/:projectId', async (req, res) =
     const receipts = await MaterialReceipt.find({ project: projectId })
       .populate('items.material')
       .sort({ createdAt: -1 });
+
+    // You can optionally add a 'status' field or simply return data
+    // receipts.forEach(r => r.status = 'Received'); // Example
+
     res.json(receipts);
   } catch (error) {
+    console.error('Error fetching receipts:', error);
     res.status(500).json({ error: error.message });
   }
 });
+
 
 
 
@@ -727,49 +728,24 @@ projectRouter.post('/project/add-receipt/:projectId', async (req, res) => {
     const { projectId } = req.params;
     const { date, items, userId } = req.body;
 
-    if (!date || !items || items.length === 0 || !userId) {
-      console.error("Error: missing required fields");
-      return res.status(400).json({ message: 'Date and items are required' });
+    if (!date || !items || items.length === 0) {
+      return res.status(400).json({ message: 'Date and items are required.' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(projectId)) {
+      return res.status(400).json({ message: 'Invalid project ID.' });
     }
 
-    // Filter items by checking if they have approved or partially approved requests.
-    const validItems = [];
-    for (const item of items) {
-      const approvedRequests = await Matearials.find({
-        project: projectId,
-        'items.material': item.material,
-        'items.status': { $in: ['Approved', 'Partially Approved'] },
-      });
-      if (approvedRequests && approvedRequests.length > 0) {
-        validItems.push(item);
-      } else {
-        console.warn(`No approved requests found for material ${item.material}. Skipping this item.`);
-      }
-    }
-
-    // If none of the items are valid, return an error.
-    if (validItems.length === 0) {
-      return res.status(400).json({ message: 'No approved requests found for any of the provided items.' });
-    }
-
-    // Create the receipt only with valid items.
-    const receiptId = await generateId('REC');
-    const receipt = new MaterialReceipt({
+    const receiptId = await generateId('REC'); // or your own logic
+    const newReceipt = new MaterialReceipt({
       receiptId,
       project: projectId,
       supervisor: userId,
       date,
-      items: validItems,
+      items,
     });
 
-    await receipt.save();
-
-    // Update received quantities in material requests for each valid item.
-    for (const item of validItems) {
-      await updateReceivedQuantities(projectId, item.material, item.quantity);
-    }
-
-    res.status(201).json({ message: 'Material receipt added', receipt });
+    await newReceipt.save();
+    res.status(201).json({ message: 'Material receipt added', receipt: newReceipt });
   } catch (error) {
     console.error('Error adding receipt:', error);
     res.status(500).json({ error: error.message });
@@ -825,84 +801,59 @@ projectRouter.put('/project/approved-materials/:projectId/mark-received', async 
     const { projectId } = req.params;
     const { materialId, quantityReceived } = req.body;
 
-    // Validate input
     if (!materialId || quantityReceived == null) {
-      return res.status(400).json({ message: 'Material ID and quantity received are required' });
+      return res.status(400).json({ message: 'materialId and quantityReceived are required' });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(materialId) || !mongoose.Types.ObjectId.isValid(projectId)) {
-      return res.status(400).json({ message: 'Invalid project or material ID' });
-    }
-
-    // Find material requests for this project with the specified material ID
+    // Find all "MaterialRequest" that have this material in "Approved" or "Partially Approved" status
     const requests = await Matearials.find({
       project: projectId,
       'items.material': materialId,
       'items.status': { $in: ['Approved', 'Partially Approved'] },
     });
 
-    if (requests.length === 0) {
-      return res.status(404).json({ message: 'No approved requests found for this material' });
-    }
+    let remainingQty = quantityReceived;
 
-    let remainingQuantity = quantityReceived;
-
-    // Update the requests and mark them as received
-    for (const request of requests) {
-      let requestModified = false;
-
-      for (const item of request.items) {
+    for (const req of requests) {
+      let modified = false;
+      for (const item of req.items) {
         if (
-          item.material.toString() === materialId.toString() &&
+          item.material.toString() === materialId &&
           ['Approved', 'Partially Approved'].includes(item.status)
         ) {
-          const pendingQuantity = item.approvedQuantity - (item.receivedQuantity || 0);
+          const pending = item.approvedQuantity - (item.receivedQuantity || 0);
+          if (pending > 0) {
+            const allocate = Math.min(pending, remainingQty);
+            item.receivedQuantity = (item.receivedQuantity || 0) + allocate;
+            remainingQty -= allocate;
+            modified = true;
 
-          if (pendingQuantity > 0) {
-            const allocateQuantity = Math.min(pendingQuantity, remainingQuantity);
-            item.receivedQuantity = (item.receivedQuantity || 0) + allocateQuantity;
-            remainingQuantity -= allocateQuantity;
-            requestModified = true;
-
-            // If we've received all the quantity, stop
-            if (remainingQuantity <= 0) {
-              break;
+            // If fully received, set status to "Received"
+            if (item.receivedQuantity >= item.approvedQuantity) {
+              item.status = 'Received';
             }
+
+            if (remainingQty <= 0) break;
           }
         }
       }
-
-      if (requestModified) {
-        // Update item statuses if fully received
-        for (const item of request.items) {
-          if (
-            item.material.toString() === materialId.toString() &&
-            item.receivedQuantity >= item.approvedQuantity
-          ) {
-            item.status = 'Received';
-          }
-        }
-        await request.save();
+      if (modified) {
+        await req.save();
       }
-
-      // If all quantity is allocated, stop processing further requests
-      if (remainingQuantity <= 0) {
-        break;
-      }
+      if (remainingQty <= 0) break;
     }
 
-    // Update the stock in the Material collection
-    const material = await Material.findById(materialId);
-    if (material) {
-      material.stock += quantityReceived;
-      await material.save();
-    } else {
+    // Also update the material's stock if you track that in `Material`
+    const materialDoc = await Material.findById(materialId);
+    if (!materialDoc) {
       return res.status(404).json({ message: 'Material not found' });
     }
+    materialDoc.stock += quantityReceived;
+    await materialDoc.save();
 
-    res.status(200).json({ message: 'Approved material marked as received and stock updated' });
+    res.json({ message: 'Material marked as received', quantityAllocated: quantityReceived });
   } catch (error) {
-    console.error('Error marking approved material as received:', error);
+    console.error('Error marking material as received:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -911,70 +862,102 @@ projectRouter.put('/project/approved-materials/:projectId/mark-received', async 
 
 
 // Add Used Materials
+// POST /api/projects/project/add-used/:projectId
 projectRouter.post('/project/add-used/:projectId', async (req, res) => {
   try {
     const { projectId } = req.params;
-    const { date, items, userId } = req.body;
+    const { date, items, userId } = req.body; // items = [{ material: materialId, quantity }]
 
-    // Validate input
     if (!date || !items || items.length === 0) {
-      return res.status(400).json({ message: 'Date and items are required.' });
+      return res.status(400).json({ message: 'Date and at least one item are required.' });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(projectId)) {
-      return res.status(400).json({ message: 'Invalid project ID.' });
+    // Validate project existence (if needed)
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found.' });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ message: 'Invalid user ID.' });
-    }
-
-    // Step 1: Check stock availability and update in real-time
+    // For each item, check the project-level inventory
     for (const item of items) {
       const materialId = item.material;
-      const quantityRequested = item.quantity;
+      // 1) Sum total received for this project & material
+      const totalReceived = await MaterialReceipt.aggregate([
+        { $match: { project: new mongoose.Types.ObjectId(projectId) } },
+        { $unwind: '$items' },
+        { $match: { 'items.material': new mongoose.Types.ObjectId(materialId) } },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: '$items.quantity' },
+          },
+        },
+      ]);
+      const receivedQty = totalReceived.length > 0 ? totalReceived[0].total : 0;
 
-      if (!mongoose.Types.ObjectId.isValid(materialId)) {
-        return res.status(400).json({ message: `Invalid material ID: ${materialId}` });
-      }
 
-      // Fetch the current stock of the material
-      const material = await Material.findById(materialId);
-      if (!material) {
-        return res.status(404).json({ message: `Material not found for ID: ${materialId}` });
-      }
+      
+      // 2) Sum total used for this project & material
+      const totalUsed = await MaterialUsage.aggregate([
+        { $match: { project: new mongoose.Types.ObjectId(projectId) } },
+        { $unwind: '$items' },
+        { $match: { 'items.material': new mongoose.Types.ObjectId(materialId) } },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: '$items.quantity' },
+          },
+        },
+      ]);
+      const usedQty = totalUsed.length > 0 ? totalUsed[0].total : 0;
+      
+      console.log(receivedQty)
 
-      // Check if there is enough stock available
-      if (material.stock < quantityRequested) {
+      console.log(usedQty)
+
+      // 3) Compute the available local stock in this project
+      const available = receivedQty - usedQty;
+      if (parseFloat(item.quantity) > parseFloat(available)) {
         return res.status(400).json({
-          message: `Insufficient stock for material ${material.name}. Available: ${material.stock}, Requested: ${quantityRequested}`,
+          message: `Insufficient stock for that project. Material ID: ${materialId}, 
+                    Available: ${available}, Requested: ${item.quantity}`,
         });
       }
-
-      // Deduct the stock directly in the Material collection
-      material.stock -= quantityRequested;
-      await material.save();
     }
 
-    // Step 2: Generate a unique usage ID
-    const usageId = await generateId('USE');
-
-    // Step 3: Create a new MaterialUsage record
-    const usage = new MaterialUsage({
-      usageId,
+    // After we confirm all items can be used, either update existing usage doc for this date or create a new one
+    let existingUsage = await MaterialUsage.findOne({
       project: projectId,
-      supervisor: userId,
-      date,
-      items,
+      date: new Date(date),
     });
 
-    // Save the usage record
-    await usage.save();
+    if (existingUsage) {
+      // Add new items to the existing doc
+      existingUsage.items.push(...items);
+      await existingUsage.save();
+      return res.json({
+        message: 'Usage updated successfully.',
+        usage: existingUsage,
+      });
+    }
 
-    res.status(201).json({ message: 'Material usage added successfully.', usage });
+    // Otherwise, create a new usage record
+    const newUsage = new MaterialUsage({
+      usageId: `U-${Date.now()}`, // or any unique ID generator
+      project: projectId,
+      date: new Date(date),
+      supervisor: userId,
+      items,
+    });
+    await newUsage.save();
+
+    res.json({
+      message: 'Used materials recorded successfully.',
+      usage: newUsage,
+    });
   } catch (error) {
     console.error('Error adding used materials:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -1237,6 +1220,273 @@ projectRouter.get('/:projectId/chat/user/:userA/:userB', async (req, res) => {
 });
 
 
+// PUT /api/projects/project/materials/requests/:requestId/item/:itemIndex
+// Updates the requested quantity (and resets approval data).
+projectRouter.put('/project/materials/requests/:requestId/item/:itemIndex', async (req, res) => {
+  try {
+    const { requestId, itemIndex } = req.params;
+    const {
+      quantity,
+      approvedQuantity = 0,
+      rejectedQuantity = 0,
+      status = 'Pending',
+    } = req.body;
+
+    if (!quantity || quantity <= 0) {
+      return res.status(400).json({ message: 'Valid quantity is required' });
+    }
+
+    // Find the request
+    const request = await MaterialRequest.findById(requestId);
+    if (!request) {
+      return res.status(404).json({ message: 'Request not found' });
+    }
+    if (itemIndex < 0 || itemIndex >= request.items.length) {
+      return res.status(400).json({ message: 'Invalid item index' });
+    }
+
+    // Update the item
+    request.items[itemIndex].quantity = quantity;
+    request.items[itemIndex].approvedQuantity = approvedQuantity;
+    request.items[itemIndex].rejectedQuantity = rejectedQuantity;
+    request.items[itemIndex].status = status;
+
+    await request.save();
+    res.json({ message: 'Item updated successfully', request });
+  } catch (error) {
+    console.error('Error editing item:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+
+// DELETE /api/projects/project/materials/requests/:requestId/item/:itemIndex
+// Removes the item at the given index from the request
+projectRouter.delete('/project/materials/requests/:requestId/item/:itemIndex', async (req, res) => {
+  try {
+    const { requestId, itemIndex } = req.params;
+    const request = await MaterialRequest.findById(requestId);
+    if (!request) {
+      return res.status(404).json({ message: 'Request not found' });
+    }
+    if (itemIndex < 0 || itemIndex >= request.items.length) {
+      return res.status(400).json({ message: 'Invalid item index' });
+    }
+
+    // Remove the item at itemIndex
+    request.items.splice(itemIndex, 1);
+
+    await request.save();
+    res.json({ message: 'Item deleted successfully', request });
+  } catch (error) {
+    console.error('Error deleting item:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+
+
+
+// DELETE /api/projects/project/add-used/:usageId/item/:itemIndex
+// DELETE /api/projects/project/add-used/:usageId/item/:itemIndex
+projectRouter.delete('/project/add-used/:usageId/item/:itemIndex', async (req, res) => {
+  try {
+    const { usageId, itemIndex } = req.params;
+    const usage = await MaterialUsage.findById(usageId);
+    if (!usage) {
+      return res.status(404).json({ message: 'Usage doc not found.' });
+    }
+    if (itemIndex < 0 || itemIndex >= usage.items.length) {
+      return res.status(400).json({ message: 'Invalid item index.' });
+    }
+
+    usage.items.splice(itemIndex, 1);
+    await usage.save();
+    return res.json({ message: 'Item removed successfully from usage doc.' });
+  } catch (error) {
+    console.error('Error deleting used item:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+
+
+
+// POST /api/projects/project/add-used/:usageId/item/:itemIndex/comments
+// Create a new comment
+projectRouter.post('/project/add-used/:usageId/item/:itemIndex/comments', async (req, res) => {
+  try {
+    const { usageId, itemIndex } = req.params;
+    const { text, authorId, authorName } = req.body;
+    const usage = await MaterialUsage.findById(usageId).populate('items.material');
+    if (!usage) {
+      return res.status(404).json({ message: 'Usage doc not found' });
+    }
+    if (itemIndex < 0 || itemIndex >= usage.items.length) {
+      return res.status(400).json({ message: 'Invalid itemIndex' });
+    }
+
+    const newComment = {
+      text,
+      authorId,
+      authorName,
+      createdAt: new Date(),
+    };
+    usage.items[itemIndex].comments.push(newComment);
+
+    await usage.save();
+    // Return the updated comments
+    res.json({ comments: usage.items[itemIndex].comments });
+  } catch (err) {
+    console.error('Error adding comment:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// PUT /api/projects/project/add-used/:usageId/item/:itemIndex/comments/:commentId
+// Edit a comment
+projectRouter.put('/project/add-used/:usageId/item/:itemIndex/comments/:commentId', async (req, res) => {
+  try {
+    const { usageId, itemIndex, commentId } = req.params;
+    const { text } = req.body;
+    const usage = await MaterialUsage.findById(usageId).populate('items.material');
+    if (!usage) {
+      return res.status(404).json({ message: 'Usage not found' });
+    }
+    if (itemIndex < 0 || itemIndex >= usage.items.length) {
+      return res.status(400).json({ message: 'Invalid itemIndex' });
+    }
+
+    const item = usage.items[itemIndex];
+    const comment = item.comments.id(commentId);
+    if (!comment) {
+      return res.status(404).json({ message: 'Comment not found' });
+    }
+
+    comment.text = text;
+    await usage.save();
+    res.json({ comments: item.comments });
+  } catch (err) {
+    console.error('Error editing comment:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// DELETE /api/projects/project/add-used/:usageId/item/:itemIndex/comments/:commentId
+// Delete a comment
+projectRouter.delete('/project/add-used/:usageId/item/:itemIndex/comments/:commentId', async (req, res) => {
+  try {
+    const { usageId, itemIndex, commentId } = req.params;
+    const usage = await MaterialUsage.findById(usageId);
+    if (!usage) {
+      return res.status(404).json({ message: 'Usage not found' });
+    }
+    if (itemIndex < 0 || itemIndex >= usage.items.length) {
+      return res.status(400).json({ message: 'Invalid item index.' });
+    }
+
+    const item = usage.items[itemIndex];
+
+    // Find the index of the comment
+    const commentIndex = item.comments.findIndex(
+      (comment) => comment._id.toString() === commentId
+    );
+
+    if (commentIndex === -1) {
+      return res.status(404).json({ message: 'Comment not found' });
+    }
+
+    // Remove the comment using splice
+    item.comments.splice(commentIndex, 1);
+
+    await usage.save();
+    res.json({ message: 'Comment deleted successfully', comments: item.comments });
+  } catch (err) {
+    console.error('Error deleting comment:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+
+
+// PUT /api/projects/project/add-used/:usageId/item/:itemIndex
+projectRouter.put('/project/add-used/:usageId/item/:itemIndex', async (req, res) => {
+  try {
+    const { usageId, itemIndex } = req.params;
+    const { newQuantity } = req.body;
+
+    if (!newQuantity || newQuantity <= 0) {
+      return res.status(400).json({ message: 'Valid newQuantity is required' });
+    }
+
+    const usage = await MaterialUsage.findById(usageId).populate('items.material');
+    if (!usage) {
+      return res.status(404).json({ message: 'Usage doc not found' });
+    }
+    if (itemIndex < 0 || itemIndex >= usage.items.length) {
+      return res.status(400).json({ message: 'Invalid itemIndex' });
+    }
+
+    const item = usage.items[itemIndex];
+    const materialId = item.material._id;
+
+    // 1) Sum total received for this material in this project
+    const totalReceived = await MaterialReceipt.aggregate([
+      { $match: { project: usage.project } },
+      { $unwind: '$items' },
+      { $match: { 'items.material': materialId } },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$items.quantity' },
+        },
+      },
+    ]);
+    const receivedQty = totalReceived.length > 0 ? totalReceived[0].total : 0;
+
+    // 2) Sum total used for this material in this project (exclude this item itself to recalc properly)
+    // We'll subtract the old quantity from the usage doc, then check if the new total usage is feasible
+    const totalUsedOther = await MaterialUsage.aggregate([
+      { $match: { project: usage.project } },
+      { $unwind: '$items' },
+      { $match: { 'items.material': materialId } },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$items.quantity' },
+        },
+      },
+    ]);
+    const usedOther = totalUsedOther.length > 0 ? totalUsedOther[0].total : 0;
+    // The usage of this item is currently item.quantity, so effective usage so far is (usedOther - item.quantity)
+
+    const currentItemQty = item.quantity;
+    const totalUsedExcludingThis = usedOther - currentItemQty; 
+    const available = receivedQty - totalUsedExcludingThis; // how much is left if we remove the old quantity
+
+    if (newQuantity > available) {
+      return res.status(400).json({
+        message: `Insufficient stock. Available: ${available}, Requested: ${newQuantity}`,
+      });
+    }
+
+    // All good. Update the item quantity
+    item.quantity = newQuantity;
+    await usage.save();
+
+    res.json({
+      message: 'Usage item updated successfully',
+      usage,
+    });
+  } catch (error) {
+    console.error('Error updating used item:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+
+
+
 
 
 // GET all tasks for a project
@@ -1253,6 +1503,25 @@ projectRouter.put('/:projectId/tasks/:taskId', updateTask);
 
 // DELETE a task
 projectRouter.delete('/:projectId/tasks/:taskId', deleteTask);
+
+
+
+
+projectRouter.get('/:projectId/progress', getProgressItems);
+projectRouter.post('/:projectId/progress', createProgressItem);
+projectRouter.patch('/:projectId/progress/:progressId', updateProgressItem);
+projectRouter.delete('/:projectId/progress/:progressId', deleteProgressItem);
+
+// Sub-progress
+projectRouter.post('/:projectId/progress/:progressId/subprogress', createSubProgressItem);
+projectRouter.patch('/:projectId/progress/:progressId/subprogress/:subProgressId', updateSubProgressItem);
+projectRouter.delete('/:projectId/progress/:progressId/subprogress/:subProgressId', deleteSubProgressItem);
+
+// Comments
+projectRouter.get('/:projectId/progress/:progressId/comments', getProgressComments);
+projectRouter.post('/:projectId/progress/:progressId/comments', addProgressComment);
+projectRouter.patch('/:projectId/progress/:progressId/comments/:commentId', updateProgressComment);
+projectRouter.delete('/:projectId/progress/:progressId/comments/:commentId', deleteProgressComment);
 
 
 

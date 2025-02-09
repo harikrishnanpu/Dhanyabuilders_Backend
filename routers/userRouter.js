@@ -177,7 +177,7 @@ userRouter.get(
       const user = await User.findById(userId); // Ensure this is awaited
 
       if (!user) {
-        console.log('User not found for given token');
+        // console.log('User not found for given token');
         return res.status(401).json({ message: 'Invalid Token' });
       }
 
